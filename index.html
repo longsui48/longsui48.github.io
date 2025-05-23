@@ -11,15 +11,20 @@
             /* 自定义样式 */
             #side-nav {
                 position: fixed;
-                right: 20px;
-                top: 175px;
+                right: -240px;
+                top: 110px;
                 width: 240px;
-                max-height: 70vh;
+                max-height: 80vh;
                 overflow-y: auto;
                 background: white;
                 padding: 15px;
                 border-radius: 8px;
                 box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+                transition: right 0.3s ease;
+            }
+
+            #side-nav.open {
+                right: 20px;
             }
 
             .question-btn {
@@ -69,12 +74,13 @@
             #toggle-nav {
                 position: fixed;
                 right: 20px;
-                top: 125px;
+                top: 55px;
                 background: white;
                 padding: 10px;
                 border-radius: 8px;
                 box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
                 cursor: pointer;
+                z-index: 10;
             }
 
             /* 错题解析样式 */
@@ -112,6 +118,49 @@
                 border: 2px solid red;
                 animation: blinkBorder 1s linear infinite;
             }
+
+            /* 模态框样式 */
+            #image-modal {
+                display: none;
+                position: fixed;
+                z-index: 1;
+                left: 0;
+                top: 0;
+                width: 100%;
+                height: 100%;
+                overflow: auto;
+                background-color: rgba(0, 0, 0, 0.9);
+            }
+
+            #modal-image {
+                margin: auto;
+                display: block;
+                max-width: 90%;
+                max-height: 90%;
+                position: absolute;
+                top: 50%;
+                left: 50%;
+                transform: translate(-50%, -50%);
+                transition: 0.3s;
+                object-fit: contain;
+                /* 确保图片按比例缩放 */
+            }
+
+            #close-modal {
+                position: absolute;
+                top: 15px;
+                right: 35px;
+                color: #f1f1f1;
+                font-size: 40px;
+                font-weight: bold;
+                transition: 0.3s;
+            }
+
+            #close-modal:hover, #close-modal:focus {
+                color: #bbb;
+                text-decoration: none;
+                cursor: pointer;
+            }
         </style>
     </head>
     <body class="bg-gray-50">
@@ -136,7 +185,7 @@
                     <i class="fas fa-bolt mr-2"></i>错题模式
                 </button>
                 <button onclick="resetProgress()" class="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded-lg transition-colors">
-                    <i class="fas fa-sync-alt mr-2"></i>重置题目
+                    <i class="fas fa-sync-alt mr-2"></i>重置进度
                 </button>
                 <select id="category-filter" onchange="filterQuestions()" class="bg-white border border-gray-300 rounded-lg px-4 py-2">
                     <option value="">所有分类</option>
@@ -206,13 +255,20 @@
             </div>
         </div>
         <!-- 折叠按钮 -->
-        <div id="toggle-nav">展开/折叠</div>
+        <div id="toggle-nav">
+            <i class="fas fa-bars"></i>
+        </div>
         <!-- 右侧导航 -->
-        <div id="side-nav" class="bg-white">
+        <div id="side-nav" class="open">
             <div class="p-4 border-b">
                 <input type="text" id="search-input" placeholder="搜索题号..." class="w-full px-3 py-2 border rounded-lg">
             </div>
-            <div class="p-4 grid grid-cols-4" id="question-nav"></div><!-- gap-1 -->
+            <div class="p-4 grid grid-cols-4" id="question-nav"></div><!-- grid-cols-5 gap-2 -->
+        </div>
+        <!-- 模态框 -->
+        <div id="image-modal">
+            <span id="close-modal">&times;</span>
+            <img id="modal-image" src="">
         </div>
         <script>
             // 状态管理
@@ -232,6 +288,8 @@
             function init() {
                 bindEvents();
                 loadSampleQuestions();
+                const sideNav = document.getElementById('side-nav');
+                sideNav.classList.add('open');
                 updateUI();
             }
 
@@ -279,6 +337,22 @@
 
                 // 新增输入框事件
                 document.getElementById('blink-duration').oninput = updateBlinkDuration;
+
+                // 图片点击事件
+                const questionImage = document.getElementById('question-image');
+                questionImage.onclick = openModal;
+
+                // 模态框关闭事件
+                const closeModal = document.getElementById('close-modal');
+                closeModal.onclick = closeModalHandler;
+
+                // 模态框图片点击关闭事件
+                const modalImage = document.getElementById('modal-image');
+                modalImage.onclick = closeModalHandler;
+
+                // 模态框鼠标滚轮事件
+                const imageModal = document.getElementById('image-modal');
+                imageModal.addEventListener('wheel', wheelHandler);
             }
 
             // 核心功能函数
@@ -368,37 +442,37 @@
                         const div = document.createElement('div');
                         div.className = 'flex items-center space-x-3';
                         div.innerHTML = `
-                                        <input type="${question.题目类型 === 'single' ? 'radio' : 'checkbox'}" 
-                                               id="option-${key}" 
-                                               name="answer" 
-                                               value="${key}"
-                                               class="w-5 h-5">
-                                        <label for="option-${key}" class="text-lg">${key}. ${value}</label>
-                                    `;
+                            <input type="${question.题目类型 === 'single' ? 'radio' : 'checkbox'}" 
+                                   id="option-${key}" 
+                                   name="answer" 
+                                   value="${key}"
+                                   class="w-5 h-5">
+                            <label for="option-${key}" class="text-lg">${key}. ${value}</label>
+                        `;
                         optionsContainer.appendChild(div);
                     });
                     break;
                 case 'fill':
                     optionsContainer.innerHTML = `
-                                    <input type="text" 
-                                           id="fill-answer" 
-                                           class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                                           placeholder="请输入答案...">
-                                `;
+                        <input type="text" 
+                               id="fill-answer" 
+                               class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                               placeholder="请输入答案...">
+                    `;
                     break;
                 case 'judge':
                     optionsContainer.innerHTML = `
-                                    <div class="flex space-x-4">
-                                        <div class="flex items-center">
-                                            <input type="radio" id="option-true" name="answer" value="1" class="w-5 h-5">
-                                            <label for="option-true" class="ml-2 text-lg">正确</label>
-                                        </div>
-                                        <div class="flex items-center">
-                                            <input type="radio" id="option-false" name="answer" value="0" class="w-5 h-5">
-                                            <label for="option-false" class="ml-2 text-lg">错误</label>
-                                        </div>
-                                    </div>
-                                `;
+                        <div class="flex space-x-4">
+                            <div class="flex items-center">
+                                <input type="radio" id="option-true" name="answer" value="1" class="w-5 h-5">
+                                <label for="option-true" class="ml-2 text-lg">正确</label>
+                            </div>
+                            <div class="flex items-center">
+                                <input type="radio" id="option-false" name="answer" value="0" class="w-5 h-5">
+                                <label for="option-false" class="ml-2 text-lg">错误</label>
+                            </div>
+                        </div>
+                    `;
                     break;
                 }
 
@@ -407,7 +481,6 @@
                 if (question.图片路径) {
                     imgElement.style.display = 'block';
                     imgElement.src = question.图片路径;
-                    imgElement.onclick = () => window.open(question.图片路径);
                 } else {
                     imgElement.style.display = 'none';
                 }
@@ -450,7 +523,7 @@
 
                 if (!isCorrect && state.blinkHighlight) {
                     showExplanation(question, userAnswer);
-                };
+                }
                 updateUI();
             }
 
@@ -552,7 +625,7 @@
                     state.currentIndex--;
                 } else {
                     alert('已经是第一题了！');
-                };
+                }
                 updateUI();
             }
 
@@ -561,11 +634,11 @@
                     state.currentIndex++;
                 } else {
                     alert('已经是最后一题了！');
-                };
+                }
                 updateUI();
             }
 
-            // 初始化示例题库
+            // 初始化示例题库，添加图片路径
             function loadSampleQuestions() {
                 state.questions = [{
                     _id: 1,
@@ -630,7 +703,7 @@
             // 折叠导航栏
             function toggleNav() {
                 const sideNav = document.getElementById('side-nav');
-                sideNav.style.display = sideNav.style.display === 'none' ? 'block' : 'none';
+                sideNav.classList.toggle('open');
             }
 
             // 显示错题解析
@@ -639,7 +712,7 @@
                 const explanationText = document.getElementById('explanation-text');
                 const userAnsStr = userAnswer.map(ans => question.选项[ans] || ans).join(', ');
                 const correctAnsStr = question.答案.map(ans => question.选项[ans] || ans).join(', ');
-                const text = `你的答案: ${userAnsStr}，正确答案: ${correctAnsStr}。`;
+                const text = `你的答案：${userAnsStr}，正确答案：${correctAnsStr}。`;
                 explanationText.textContent = text;
                 explanationDiv.style.display = 'block';
                 setTimeout( () => explanationDiv.style.display = 'none', state.blinkDuration * 1000);
@@ -660,7 +733,7 @@
                         const userAns = state.questionStatus[q._id].userAnswer;
                         const userAnsStr = userAns ? userAns.map(ans => q.选项[ans] || ans).join(', ') : '未作答';
                         const correctAnsStr = q.答案.map(ans => q.选项[ans] || ans).join(', ');
-                        allExplanations += `<p>第 ${index + 1} 题: ${q.题目内容}</p><p>你的答案: ${userAnsStr}，正确答案: ${correctAnsStr}。${q.解析}</p><hr>`;
+                        allExplanations += `<p>第 ${index + 1} 题：${q.题目内容}</p><p>你的答案：${userAnsStr}，正确答案：${correctAnsStr}。${q.解析}</p><hr>`;
                     });
                     explanationTextDiv.innerHTML = allExplanations;
                     explanationDiv.style.display = 'block';
@@ -753,6 +826,40 @@
                     state.blinkDuration = value;
                 } else {
                     input.value = state.blinkDuration;
+                }
+            }
+
+            // 打开模态框
+            function openModal() {
+                const modal = document.getElementById('image-modal');
+                const modalImage = document.getElementById('modal-image');
+                const questionImage = document.getElementById('question-image');
+                modal.style.display = 'block';
+                modalImage.src = questionImage.src;
+            }
+
+            // 关闭模态框
+            function closeModalHandler() {
+                const modal = document.getElementById('image-modal');
+                modal.style.display = 'none';
+            }
+
+            // 鼠标滚轮事件处理
+            function wheelHandler(e) {
+                e.preventDefault();
+                const modalImage = document.getElementById('modal-image');
+                // 调整缩放因子以加快缩放速度
+                const scaleFactor = e.deltaY > 0 ? 0.8 : 1.2;
+                const currentWidth = modalImage.offsetWidth;
+                const currentHeight = modalImage.offsetHeight;
+                const newWidth = currentWidth * scaleFactor;
+                const newHeight = currentHeight * scaleFactor;
+                const maxWidth = window.innerWidth * 0.9;
+                const maxHeight = window.innerHeight * 0.9;
+
+                if (newWidth > 0 && newHeight > 0 && newWidth <= maxWidth && newHeight <= maxHeight) {
+                    modalImage.style.width = newWidth + 'px';
+                    modalImage.style.height = newHeight + 'px';
                 }
             }
 
