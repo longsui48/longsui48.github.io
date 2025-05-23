@@ -1,0 +1,763 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <script src="https://cdn.tailwindcss.com"></script>
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css">
+        <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+        <title>题库刷题</title>
+        <style>
+            /* 自定义样式 */
+            #side-nav {
+                position: fixed;
+                right: 20px;
+                top: 175px;
+                width: 240px;
+                max-height: 70vh;
+                overflow-y: auto;
+                background: white;
+                padding: 15px;
+                border-radius: 8px;
+                box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            }
+
+            .question-btn {
+                width: 40px;
+                height: 40px;
+                margin: 4px;
+                transition: all 0.3s;
+            }
+
+            .answered-correct {
+                background-color: #4CAF50 !important;
+                color: white !important;
+            }
+
+            .answered-wrong {
+                background-color: #f44336 !important;
+                color: white !important;
+            }
+
+            .current-question {
+                box-shadow: 0 0 0 2px #2196F3;
+            }
+
+            .blink-border {
+                animation: blinkBorder 1s linear infinite;
+            }
+
+            @keyframes blinkBorder {
+                50% {
+                    border-color: transparent;
+                }
+            }
+
+            #drop-area.dragover {
+                border-color: #2196F3;
+                background-color: #f0f9ff;
+            }
+
+            .question-image {
+                max-width: 300px;
+                max-height: 200px;
+                cursor: zoom-in;
+                border-radius: 8px;
+            }
+
+            /* 新增折叠按钮样式 */
+            #toggle-nav {
+                position: fixed;
+                right: 20px;
+                top: 125px;
+                background: white;
+                padding: 10px;
+                border-radius: 8px;
+                box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+                cursor: pointer;
+            }
+
+            /* 错题解析样式 */
+            #wrong-answer-explanation {
+                display: none;
+                background: white;
+                padding: 15px;
+                border-radius: 8px;
+                box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+                margin-top: 20px;
+            }
+
+            /* 结束答题按钮样式 */
+            #end-exam-btn {
+                background-color: #FF9800;
+                color: white;
+                padding: 10px 20px;
+                border-radius: 8px;
+                margin-top: 20px;
+                cursor: pointer;
+            }
+
+            /* 结束答题后错题解析显示区域样式 */
+            #end-exam-explanation {
+                display: none;
+                background: white;
+                padding: 15px;
+                border-radius: 8px;
+                box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+                margin-top: 20px;
+            }
+
+            /* 新增闪烁框样式 */
+            .correct-answer-blink {
+                border: 2px solid red;
+                animation: blinkBorder 1s linear infinite;
+            }
+        </style>
+    </head>
+    <body class="bg-gray-50">
+        <!-- 控制面板 -->
+        <div class="container mx-auto p-6" style="margin-right: 280px;">
+            <!-- 标题 -->
+            <!-- <h1 class="text-3xl font-bold text-center mb-8 text-blue-600">题库刷题</h1> -->
+            <!-- 文件拖放区 -->
+            <div id="drop-area" class="border-2 border-dashed border-gray-300 rounded-xl p-6 mb-6 text-center">
+                <p class="text-gray-600">拖放.xlsx文件至此或
+                    <label class="text-blue-600 cursor-pointer">点击选择文件
+                        <input type="file" id="file-input" hidden accept=".xlsx">
+                    </label>
+                </p>
+            </div>
+            <!-- 控制栏 -->
+            <div class="flex flex-wrap gap-4 mb-6">
+                <button onclick="exportQuestions()" class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg transition-colors">
+                    <i class="fas fa-download mr-2"></i>导出题库
+                </button>
+                <button onclick="toggleWrongMode()" id="wrong-mode-btn" class="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg transition-colors">
+                    <i class="fas fa-bolt mr-2"></i>错题模式
+                </button>
+                <button onclick="resetProgress()" class="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded-lg transition-colors">
+                    <i class="fas fa-sync-alt mr-2"></i>重置题目
+                </button>
+                <select id="category-filter" onchange="filterQuestions()" class="bg-white border border-gray-300 rounded-lg px-4 py-2">
+                    <option value="">所有分类</option>
+                </select>
+                <!-- 修改此处标签文字 -->
+                <label class="flex items-center space-x-2">
+                    <input type="checkbox" id="blink-switch" checked onchange="toggleBlinkHighlight()">
+                    <span>答案闪烁</span>
+                </label>
+                <!-- 新增输入框用于自定义闪烁秒数 -->
+                <label class="flex items-center space-x-2">
+                    <input type="number" id="blink-duration" value="5" min="1" class="w-16 p-1 border border-gray-300 rounded">
+                    <span>闪烁秒数</span>
+                </label>
+            </div>
+            <!-- 题目容器 -->
+            <div id="question-container" class="bg-white rounded-xl shadow-lg p-6 mb-6">
+                <div class="flex justify-between items-center mb-4">
+                    <span id="question-number" class="text-lg font-semibold text-gray-700"></span>
+                    <span id="progress-status" class="text-sm text-gray-500"></span>
+                </div>
+                <div id="question-content" class="mb-4">
+                    <p id="question-text" class="text-lg mb-4"></p>
+                    <img id="question-image" class="question-image mb-4" src="" alt="" style="display: none;">
+                    <div id="options-container" class="space-y-3"></div>
+                </div>
+                <div class="flex flex-wrap gap-3 mt-6">
+                    <button onclick="prevQuestion()" class="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded-lg transition-colors">
+                        <i class="fas fa-chevron-left mr-2"></i>上一题
+                    </button>
+                    <button onclick="submitAnswer()" class="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-lg transition-colors">
+                        <i class="fas fa-check-circle mr-2"></i>提交答案
+                    </button>
+                    <button onclick="nextQuestion()" class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg transition-colors">
+                        <i class="fas fa-chevron-right ml-2"></i>下一题
+                    </button>
+                </div>
+            </div>
+            <!-- 错题解析 -->
+            <div id="wrong-answer-explanation">
+                <h2 class="text-xl font-bold mb-2">错题解析</h2>
+                <p id="explanation-text"></p>
+            </div>
+            <!-- 结束答题按钮 -->
+            <button id="end-exam-btn" onclick="endExam()">结束答题</button>
+            <!-- 统计信息 -->
+            <div class="bg-white rounded-xl shadow-lg p-6">
+                <div class="grid grid-cols-3 gap-4 text-center">
+                    <div class="p-3 bg-green-100 rounded-lg">
+                        <p class="text-sm text-gray-600">正确</p>
+                        <p id="correct-count" class="text-2xl font-bold text-green-600">0</p>
+                    </div>
+                    <div class="p-3 bg-red-100 rounded-lg">
+                        <p class="text-sm text-gray-600">错误</p>
+                        <p id="wrong-count" class="text-2xl font-bold text-red-600">0</p>
+                    </div>
+                    <div class="p-3 bg-blue-100 rounded-lg">
+                        <p class="text-sm text-gray-600">剩余</p>
+                        <p id="remaining-count" class="text-2xl font-bold text-blue-600">0</p>
+                    </div>
+                </div>
+            </div>
+            <!-- 结束答题后错题解析显示区域 -->
+            <div id="end-exam-explanation">
+                <h2 class="text-xl font-bold mb-2">结束答题 - 错题解析</h2>
+                <div id="end-exam-explanation-text"></div>
+            </div>
+        </div>
+        <!-- 折叠按钮 -->
+        <div id="toggle-nav">展开/折叠</div>
+        <!-- 右侧导航 -->
+        <div id="side-nav" class="bg-white">
+            <div class="p-4 border-b">
+                <input type="text" id="search-input" placeholder="搜索题号..." class="w-full px-3 py-2 border rounded-lg">
+            </div>
+            <div class="p-4 grid grid-cols-4" id="question-nav"></div><!-- gap-1 -->
+        </div>
+        <script>
+            // 状态管理
+            let state = {
+                questions: [],
+                currentIndex: 0,
+                questionStatus: {},
+                wrongMode: false,
+                filteredQuestions: [],
+                categories: new Set(),
+                blinkHighlight: true,
+                // 新增状态用于控制正确答案闪烁功能
+                blinkDuration: 5 // 新增状态用于存储闪烁秒数
+            };
+
+            // 初始化
+            function init() {
+                bindEvents();
+                loadSampleQuestions();
+                updateUI();
+            }
+
+            // 绑定事件
+            function bindEvents() {
+                // 文件拖放
+                const dropArea = document.getElementById('drop-area');
+                dropArea.ondragover = (e) => {
+                    e.preventDefault();
+                    dropArea.classList.add('dragover');
+                };
+
+                dropArea.ondragleave = () => dropArea.classList.remove('dragover');
+                dropArea.ondrop = (e) => {
+                    e.preventDefault();
+                    dropArea.classList.remove('dragover');
+                    handleFile(e.dataTransfer.files[0]);
+                };
+
+                // 文件选择
+                document.getElementById('file-input').onchange = (e) => handleFile(e.target.files[0]);
+
+                // 快捷键
+                document.onkeydown = (e) => {
+                    if (e.key >= '1' && e.key <= '8')
+                        handleNumberKey(e.key);
+                    if (e.key === 'Enter')
+                        submitAnswer();
+                    if (e.key === 'ArrowUp')
+                        prevQuestion();
+                    if (e.key === 'ArrowDown')
+                        nextQuestion();
+                    if (e.key === '9')
+                        randomQuestion();
+                };
+
+                // 题号搜索
+                document.getElementById('search-input').oninput = searchQuestions;
+
+                // 折叠按钮事件
+                document.getElementById('toggle-nav').onclick = toggleNav;
+
+                // 新增开关事件
+                document.getElementById('blink-switch').onchange = toggleBlinkHighlight;
+
+                // 新增输入框事件
+                document.getElementById('blink-duration').oninput = updateBlinkDuration;
+            }
+
+            // 核心功能函数
+            function handleFile(file) {
+                if (!file)
+                    return;
+
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    const data = new Uint8Array(e.target.result);
+                    const workbook = XLSX.read(data, {
+                        type: 'array'
+                    });
+                    const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+                    const jsonData = XLSX.utils.sheet_to_json(worksheet);
+
+                    state.questions = jsonData.map( (item, index) => ({
+                        _id: Date.now() + index,
+                        题目内容: item.题目内容,
+                        选项: parseOptions(item),
+                        答案: item.答案.split(','),
+                        题目类型: item.题目类型 || 'single',
+                        题目类目: item.题目类目 || '默认类目',
+                        图片路径: item.图片路径 || '',
+                        解析: item.解析 || ''// 新增解析字段
+                    }));
+
+                    initCategories();
+                    filterQuestions();
+                    updateUI();
+                };
+
+                reader.readAsArrayBuffer(file);
+            }
+
+            function parseOptions(item) {
+                return Object.entries(item).reduce( (acc, [key,value]) => {
+                    if (/^\d+$/.test(key))
+                        acc[key] = value;
+                    return acc;
+                }, {});
+            }
+
+            function initCategories() {
+                state.categories = new Set(state.questions.map(q => q.题目类目));
+                const filter = document.getElementById('category-filter');
+                filter.innerHTML = '<option value="">所有分类</option>';
+                state.categories.forEach(cat => {
+                    const option = document.createElement('option');
+                    option.value = cat;
+                    option.textContent = cat;
+                    filter.appendChild(option);
+                });
+            }
+
+            function filterQuestions() {
+                const category = document.getElementById('category-filter').value;
+                state.filteredQuestions = state.questions.filter(q => {
+                    const matchCategory = !category || q.题目类目 === category;
+                    return state.wrongMode ? matchCategory && state.questionStatus[q._id] && !state.questionStatus[q._id].correct : matchCategory;
+                });
+                state.currentIndex = 0;
+                updateUI();
+            }
+
+            function updateUI() {
+                updateQuestion();
+                updateNavigation();
+                updateStats();
+            }
+
+            function updateQuestion() {
+                const question = state.filteredQuestions[state.currentIndex];
+                if (!question)
+                    return;
+
+                document.getElementById('question-number').textContent = `第 ${state.currentIndex + 1} 题 / 共 ${state.filteredQuestions.length} 题`;
+                document.getElementById('question-text').innerHTML = question.题目内容;
+
+                const optionsContainer = document.getElementById('options-container');
+                optionsContainer.innerHTML = '';
+
+                switch (question.题目类型) {
+                case 'single':
+                case 'multiple':
+                    Object.entries(question.选项).forEach( ([key,value]) => {
+                        const div = document.createElement('div');
+                        div.className = 'flex items-center space-x-3';
+                        div.innerHTML = `
+                                        <input type="${question.题目类型 === 'single' ? 'radio' : 'checkbox'}" 
+                                               id="option-${key}" 
+                                               name="answer" 
+                                               value="${key}"
+                                               class="w-5 h-5">
+                                        <label for="option-${key}" class="text-lg">${key}. ${value}</label>
+                                    `;
+                        optionsContainer.appendChild(div);
+                    });
+                    break;
+                case 'fill':
+                    optionsContainer.innerHTML = `
+                                    <input type="text" 
+                                           id="fill-answer" 
+                                           class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                                           placeholder="请输入答案...">
+                                `;
+                    break;
+                case 'judge':
+                    optionsContainer.innerHTML = `
+                                    <div class="flex space-x-4">
+                                        <div class="flex items-center">
+                                            <input type="radio" id="option-true" name="answer" value="1" class="w-5 h-5">
+                                            <label for="option-true" class="ml-2 text-lg">正确</label>
+                                        </div>
+                                        <div class="flex items-center">
+                                            <input type="radio" id="option-false" name="answer" value="0" class="w-5 h-5">
+                                            <label for="option-false" class="ml-2 text-lg">错误</label>
+                                        </div>
+                                    </div>
+                                `;
+                    break;
+                }
+
+                // 显示图片
+                const imgElement = document.getElementById('question-image');
+                if (question.图片路径) {
+                    imgElement.style.display = 'block';
+                    imgElement.src = question.图片路径;
+                    imgElement.onclick = () => window.open(question.图片路径);
+                } else {
+                    imgElement.style.display = 'none';
+                }
+            }
+
+            function submitAnswer() {
+                const question = state.filteredQuestions[state.currentIndex];
+                if (!question)
+                    return;
+
+                let userAnswer = getSelectedAnswers(question.题目类型);
+                if (!userAnswer.length)
+                    return alert('请选择答案');
+
+                const isCorrect = checkAnswer(question, userAnswer);
+                updateQuestionStatus(question._id, isCorrect, userAnswer);
+                handleAnswerFeedback(isCorrect, question, userAnswer);
+
+                if (state.wrongMode && isCorrect) {
+                    state.filteredQuestions = state.filteredQuestions.filter(q => q._id !== question._id);
+                    if (state.currentIndex >= state.filteredQuestions.length) {
+                        state.currentIndex = Math.max(0, state.filteredQuestions.length - 1);
+                    }
+                }
+
+                if (state.currentIndex < state.filteredQuestions.length - 1) {
+                    if (!isCorrect) {
+                        setTimeout( () => {
+                            state.currentIndex++;
+                            updateUI();
+                        }, state.blinkDuration * 1000);
+                    } else {
+                        state.currentIndex++;
+                        updateUI();
+                    }
+                } else {
+                    alert('已经是最后一题了！');
+                    updateUI();
+                }
+
+                if (!isCorrect && state.blinkHighlight) {
+                    showExplanation(question, userAnswer);
+                };
+                updateUI();
+            }
+
+            function getSelectedAnswers(type) {
+                switch (type) {
+                case 'single':
+                case 'judge':
+                    return [document.querySelector('input[name="answer"]:checked')?.value].filter(Boolean);
+                case 'multiple':
+                    return Array.from(document.querySelectorAll('input[name="answer"]:checked')).map(i => i.value);
+                case 'fill':
+                    return [document.getElementById('fill-answer').value.trim()];
+                default:
+                    return [];
+                }
+            }
+
+            function checkAnswer(question, userAnswer) {
+                return JSON.stringify(userAnswer.sort()) === JSON.stringify(question.答案.sort());
+            }
+
+            function updateQuestionStatus(id, isCorrect, userAnswer) {
+                state.questionStatus[id] = {
+                    correct: isCorrect,
+                    timestamp: Date.now(),
+                    userAnswer: userAnswer
+                };
+                updateStats();
+                if (state.wrongMode) {
+                    filterQuestions();
+                }
+            }
+
+            function updateStats() {
+                const total = state.questions.length;
+                const correct = Object.values(state.questionStatus).filter(s => s.correct).length;
+
+                document.getElementById('correct-count').textContent = correct;
+                document.getElementById('wrong-count').textContent = Object.keys(state.questionStatus).length - correct;
+                document.getElementById('remaining-count').textContent = total - Object.keys(state.questionStatus).length;
+            }
+
+            function updateNavigation() {
+                const nav = document.getElementById('question-nav');
+                nav.innerHTML = '';
+
+                const questionsToShow = state.wrongMode ? state.questions.filter(q => state.questionStatus[q._id] && !state.questionStatus[q._id].correct) : state.questions;
+
+                questionsToShow.forEach( (q, index) => {
+                    const btn = document.createElement('button');
+                    btn.className = 'question-btn rounded-lg bg-gray-200 hover:bg-gray-300';
+                    btn.textContent = state.questions.indexOf(q) + 1;
+
+                    if (state.questionStatus[q._id]) {
+                        btn.classList.add(state.questionStatus[q._id].correct ? 'answered-correct' : 'answered-wrong');
+                    }
+                    if (q._id === state.filteredQuestions[state.currentIndex]?._id) {
+                        btn.classList.add('current-question');
+                    }
+
+                    btn.onclick = () => {
+                        const targetIndex = state.filteredQuestions.findIndex(fq => fq._id === q._id);
+                        if (targetIndex > -1) {
+                            state.currentIndex = targetIndex;
+                            updateUI();
+                        }
+                    };
+
+                    nav.appendChild(btn);
+                });
+            }
+
+            // 其他功能
+            function toggleWrongMode() {
+                state.wrongMode = !state.wrongMode;
+                document.getElementById('wrong-mode-btn').classList.toggle('bg-red-500', state.wrongMode);
+                document.getElementById('wrong-mode-btn').classList.toggle('bg-gray-500', !state.wrongMode);
+                filterQuestions();
+            }
+
+            function resetProgress() {
+                state.questionStatus = {};
+                state.wrongMode = false;
+                const endExamExplanation = document.getElementById('end-exam-explanation');
+                endExamExplanation.style.display = 'none';
+                filterQuestions();
+            }
+
+            function searchQuestions() {
+                const searchTerm = document.getElementById('search-input').value.toLowerCase();
+                const navButtons = document.querySelectorAll('#question-nav button');
+                navButtons.forEach( (btn, index) => {
+                    btn.style.display = (index + 1).toString().includes(searchTerm) ? 'block' : 'none';
+                });
+            }
+
+            function prevQuestion() {
+                if (state.currentIndex > 0) {
+                    state.currentIndex--;
+                } else {
+                    alert('已经是第一题了！');
+                };
+                updateUI();
+            }
+
+            function nextQuestion() {
+                if (state.currentIndex < state.filteredQuestions.length - 1) {
+                    state.currentIndex++;
+                } else {
+                    alert('已经是最后一题了！');
+                };
+                updateUI();
+            }
+
+            // 初始化示例题库
+            function loadSampleQuestions() {
+                state.questions = [{
+                    _id: 1,
+                    题目内容: "基金管理人风险管理的内部环境要素包括（）<br>Ⅰ.员工的诚信、道德价值观和胜任能力<br>Ⅱ.管理层的理念和经营风格<br>Ⅲ.管理层分配权力和划分责任、组织和开发员工的方式<br>Ⅳ.董事会给予的关注和指导<br>",
+                    选项: {
+                        1: "Ⅰ、Ⅲ、Ⅳ",
+                        2: "Ⅰ、Ⅱ、Ⅲ",
+                        3: "Ⅰ、Ⅱ、Ⅲ、Ⅳ",
+                        4: "Ⅱ、Ⅳ"
+                    },
+                    答案: ["3"],
+                    题目类型: "single",
+                    题目类目: "单选题",
+                    图片路径: "",
+                    解析: ""
+                }, {
+                    _id: 2,
+                    题目内容: "关于指数基金,以下表述错误的是（）",
+                    选项: {
+                        1: "指数基金就是按照指数构成的标准购买该指数包含的证券市场中的全部或者一部分证券",
+                        2: "ETF联接基金是一种指数基金",
+                        3: "ETF基金是一种特殊的指数基金",
+                        4: "数基金不主动寻求超越市场的表现，而是试图复制指数的表现"
+                    },
+                    答案: ["2"],
+                    题目类型: "single",
+                    题目类目: "单选题",
+                    图片路径: "",
+                    解析: ""
+                }, {
+                    _id: 3,
+                    题目内容: "封闭式基金上市交易的条件包括（）<br>I.基金合同期限5年以上<br>Ⅱ.基金募集金额不低于2亿元人民币<br>Ⅲ.基金份额持有人不少于1000人<br>Ⅳ.公司自有资金认购不少于1000万元人民币",
+                    选项: {
+                        1: "Ⅰ、Ⅲ、Ⅳ",
+                        2: "Ⅰ、Ⅱ、Ⅲ",
+                        3: "Ⅰ、Ⅱ、Ⅲ、Ⅳ",
+                        4: "Ⅱ、Ⅳ"
+                    },
+                    答案: ["2"],
+                    题目类型: "single",
+                    题目类目: "单选题",
+                    图片路径: "",
+                    解析: ""
+                }, {
+                    _id: 4,
+                    题目内容: "关于基全分类，以下说法正确的是（）",
+                    选项: {
+                        1: "基金资产60%投资于债券的为债券型基金",
+                        2: "基金资产60%投资于股票的为股票型基金",
+                        3: "货币市场基金仅投资于货币市场工具",
+                        4: "基金中的基金仅投资于其他基金份额"
+                    },
+                    答案: ["3"],
+                    题目类型: "single",
+                    题目类目: "单选题",
+                    图片路径: "",
+                    解析: ""
+                }, ];
+                filterQuestions();
+            }
+
+            // 折叠导航栏
+            function toggleNav() {
+                const sideNav = document.getElementById('side-nav');
+                sideNav.style.display = sideNav.style.display === 'none' ? 'block' : 'none';
+            }
+
+            // 显示错题解析
+            function showExplanation(question, userAnswer) {
+                const explanationDiv = document.getElementById('wrong-answer-explanation');
+                const explanationText = document.getElementById('explanation-text');
+                const userAnsStr = userAnswer.map(ans => question.选项[ans] || ans).join(', ');
+                const correctAnsStr = question.答案.map(ans => question.选项[ans] || ans).join(', ');
+                const text = `你的答案: ${userAnsStr}，正确答案: ${correctAnsStr}。`;
+                explanationText.textContent = text;
+                explanationDiv.style.display = 'block';
+                setTimeout( () => explanationDiv.style.display = 'none', state.blinkDuration * 1000);
+                // 根据自定义秒数隐藏解析
+            }
+
+            // 结束答题功能
+            function endExam() {
+                const wrongQuestions = state.questions.filter(q => state.questionStatus[q._id] && !state.questionStatus[q._id].correct);
+                const explanationDiv = document.getElementById('end-exam-explanation');
+                const explanationTextDiv = document.getElementById('end-exam-explanation-text');
+                if (wrongQuestions.length === 0) {
+                    alert('你没有错题，很棒！');
+                    explanationDiv.style.display = 'none';
+                } else {
+                    let allExplanations = '';
+                    wrongQuestions.forEach( (q, index) => {
+                        const userAns = state.questionStatus[q._id].userAnswer;
+                        const userAnsStr = userAns ? userAns.map(ans => q.选项[ans] || ans).join(', ') : '未作答';
+                        const correctAnsStr = q.答案.map(ans => q.选项[ans] || ans).join(', ');
+                        allExplanations += `<p>第 ${index + 1} 题: ${q.题目内容}</p><p>你的答案: ${userAnsStr}，正确答案: ${correctAnsStr}。${q.解析}</p><hr>`;
+                    });
+                    explanationTextDiv.innerHTML = allExplanations;
+                    explanationDiv.style.display = 'block';
+                }
+            }
+
+            // 导出题库功能
+            function exportQuestions() {
+                const ws = XLSX.utils.json_to_sheet(state.questions.map(q => {
+                    const options = Object.entries(q.选项).reduce( (acc, [key,value]) => {
+                        acc[key] = value;
+                        return acc;
+                    }
+                    , {});
+                    return {
+                        题目内容: q.题目内容,
+                        ...options,
+                        答案: q.答案.join(','),
+                        题目类型: q.题目类型,
+                        题目类目: q.题目类目,
+                        图片路径: q.图片路径,
+                        解析: q.解析
+                    };
+                }
+                ));
+                const wb = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(wb, ws, '题库');
+                XLSX.writeFile(wb, '题库.xlsx');
+            }
+
+            // 处理数字键选择答案
+            function handleNumberKey(key) {
+                const question = state.filteredQuestions[state.currentIndex];
+                if (!question)
+                    return;
+
+                switch (question.题目类型) {
+                case 'single':
+                case 'judge':
+                    if (question.题目类型 === 'judge' && key === '2') {
+                        key = '0';
+                    }
+                    const radio = document.getElementById(`option-${key}`);
+                    if (radio) {
+                        radio.checked = true;
+                    }
+                    break;
+                case 'multiple':
+                    const checkbox = document.getElementById(`option-${key}`);
+                    if (checkbox) {
+                        checkbox.checked = !checkbox.checked;
+                    }
+                    break;
+                }
+            }
+
+            // 随机一题功能
+            function randomQuestion() {
+                if (state.filteredQuestions.length > 0) {
+                    const randomIndex = Math.floor(Math.random() * state.filteredQuestions.length);
+                    state.currentIndex = randomIndex;
+                    updateUI();
+                }
+            }
+
+            // 处理答案反馈
+            function handleAnswerFeedback(isCorrect, question, userAnswer) {
+                if (!isCorrect && state.blinkHighlight && ['single', 'multiple', 'judge'].includes(question.题目类型)) {
+                    question.答案.forEach(ans => {
+                        const label = document.querySelector(`label[for="option-${ans}"]`);
+                        if (label) {
+                            label.classList.add('correct-answer-blink');
+                            setTimeout( () => label.classList.remove('correct-answer-blink'), state.blinkDuration * 1000);
+                            // 根据自定义秒数停止闪烁
+                        }
+                    });
+                }
+            }
+
+            // 切换正确答案闪烁开关
+            function toggleBlinkHighlight() {
+                state.blinkHighlight = document.getElementById('blink-switch').checked;
+            }
+
+            // 更新闪烁秒数
+            function updateBlinkDuration() {
+                const input = document.getElementById('blink-duration');
+                const value = parseInt(input.value);
+                if (!isNaN(value) && value >= 1) {
+                    state.blinkDuration = value;
+                } else {
+                    input.value = state.blinkDuration;
+                }
+            }
+
+            // 启动系统
+            window.onload = init;
+        </script>
+    </body>
+</html>
