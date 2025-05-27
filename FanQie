@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <script src="https://cdn.tailwindcss.com"></script>
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css">
+        <title>番茄时钟 Pro</title>
+        <style>
+            :root {
+                --primary: #ff6b6b;
+                --secondary: #4ecdc4;
+            }
+        </style>
+    </head>
+    <body class="bg-gray-100 font-sans leading-normal tracking-normal">
+        <div class="container mx-auto px-4 py-8 max-w-md">
+            <div class="bg-white rounded-lg shadow-lg p-6">
+                <div class="relative">
+                    <div id="progress-bar" class="h-2 bg-gray-200 rounded-full mb-4">
+                        <div class="bg-red-500 h-full rounded-full" style="width: 100%;"></div>
+                    </div>
+                </div>
+                <div class="flex justify-center items-center mb-6">
+                    <div class="timer-status text-sm text-gray-500"></div>
+                    <div id="timer" class="text-5xl text-center font-mono font-thin mb-6">
+                        <i class="fas fa-tomato text-red-500 mr-2"></i>
+                        25:00
+                    </div>
+                </div>
+                <div class="flex justify-center mb-6 space-x-4">
+                    <button class="btn-primary flex-1">
+                        <i class="fas fa-play mr-2"></i>
+                        开始工作
+                    </button>
+                    <button class="btn-secondary flex-1" disabled>
+                        <i class="fas fa-pause mr-2"></i>
+                        暂停
+                    </button>
+                    <button class="btn-secondary flex-1">
+                        <i class="fas fa-sync-alt mr-2"></i>
+                        重置
+                    </button>
+                </div>
+                <div class="grid grid-cols-2 gap-4 mb-6">
+                    <div class="setting-group">
+                        <label class="block mb-1 text-sm text-gray-600">工作时间（分钟）</label>
+                        <input type="number" id="workTime" value="25" min="1" class="w-full px-3 py-2 leading-tight text-gray-700 border rounded shadow appearance-none focus:outline-none focus:shadow-outline">
+                    </div>
+                    <div class="setting-group">
+                        <label class="block mb-1 text-sm text-gray-600">休息时间（分钟）</label>
+                        <input type="number" id="breakTime" value="5" min="1" class="w-full px-3 py-2 leading-tight text-gray-700 border rounded shadow appearance-none focus:outline-none focus:shadow-outline">
+                    </div>
+                    <div class="setting-group">
+                        <label class="block mb-1 text-sm text-gray-600">长休息间隔</label>
+                        <input type="number" id="longBreakInterval" value="4" min="1" class="w-full px-3 py-2 leading-tight text-gray-700 border rounded shadow appearance-none focus:outline-none focus:shadow-outline">
+                    </div>
+                    <div class="setting-group">
+                        <label class="block mb-1 text-sm text-gray-600">长休息时间</label>
+                        <input type="number" id="longBreakDuration" value="15" min="1" class="w-full px-3 py-2 leading-tight text-gray-700 border rounded shadow appearance-none focus:outline-none focus:shadow-outline">
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-4 mb-6 bg-gray-50 p-4 rounded-lg">
+                    <div class="stat-item">
+                        <div class="stat-value text-2xl font-bold" id="completedCount">0</div>
+                        <div class="text-sm text-gray-500">完成次数</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-value text-2xl font-bold" id="totalMinutes">0</div>
+                        <div class="text-sm text-gray-500">总分钟数</div>
+                    </div>
+                </div>
+                <div class="bg-gray-50 p-4 rounded-lg">
+                    <div class="history-header text-sm text-gray-500 mb-2">最近记录</div>
+                    <div id="historyList" class="max-h-48 overflow-y-auto space-y-2">
+                    <!-- 历史记录将在这里动态生成 -->
+                    </div>
+                </div>
+            </div>
+        </div>
+        <script>
+            class PomodoroUltimate {
+                constructor() {
+                    this.timerId = null;
+                    this.isRunning = false;
+                    this.isWork = true;
+                    this.totalSeconds = 25 * 60;
+                    this.remainingSeconds = this.totalSeconds;
+                    this.sessionCount = 0;
+                    this.totalMinutes = 0;
+                    this.workSessionsCompleted = 0;
+                    this.history = [];
+                    this.longBreakInterval = 4;
+                    this.longBreakDuration = 15;
+
+                    this.dom = {
+                        startBtn: document.querySelector('.btn-primary'),
+                        pauseBtn: document.querySelectorAll('.btn-secondary')[0],
+                        resetBtn: document.querySelectorAll('.btn-secondary')[1],
+                        workTime: document.getElementById('workTime'),
+                        breakTime: document.getElementById('breakTime'),
+                        longBreakInterval: document.getElementById('longBreakInterval'),
+                        longBreakDuration: document.getElementById('longBreakDuration'),
+                        timer: document.getElementById('timer'),
+                        progressBar: document.querySelector('#progress-bar > div'),
+                        completedCount: document.getElementById('completedCount'),
+                        totalMinutes: document.getElementById('totalMinutes'),
+                        historyList: document.getElementById('historyList'),
+                        timerStatus: document.querySelector('.timer-status')
+                    };
+
+                    this.init();
+                }
+
+                init() {
+                    this.registerEvents();
+                    this.loadState();
+                    this.updateUI();
+                    this.requestNotificationPermission();
+                    this.updateHistoryDisplay();
+                }
+
+                registerEvents() {
+                    this.dom.startBtn.addEventListener('click', () => this.start());
+                    this.dom.pauseBtn.addEventListener('click', () => this.pause());
+                    this.dom.resetBtn.addEventListener('click', () => this.reset());
+
+                    [this.dom.workTime, this.dom.breakTime, this.dom.longBreakInterval, this.dom.longBreakDuration].forEach(input => {
+                        input.addEventListener('change', () => this.handleInputChange(input));
+                    }
+                    );
+
+                    document.addEventListener('visibilitychange', () => this.handleVisibilityChange());
+                    document.addEventListener('keydown', e => this.handleKeyboard(e));
+                }
+
+                start() {
+                    if (!this.isRunning) {
+                        this.isRunning = true;
+                        this.dom.startBtn.disabled = true;
+                        this.dom.pauseBtn.disabled = false;
+                        this.timerId = setInterval( () => this.tick(), 1000);
+                        this.saveState();
+                    }
+                }
+
+                pause() {
+                    this.isRunning = false;
+                    clearInterval(this.timerId);
+                    this.dom.startBtn.disabled = false;
+                    this.dom.pauseBtn.disabled = true;
+                    this.saveState();
+                }
+
+                reset() {
+                    this.pause();
+                    this.isWork = true;
+                    this.totalSeconds = this.dom.workTime.value * 60;
+                    this.remainingSeconds = this.totalSeconds;
+                    this.updateUI();
+                    this.saveState();
+                }
+
+                tick() {
+                    if (this.remainingSeconds > 0) {
+                        this.remainingSeconds--;
+                        this.updateUI();
+                    } else {
+                        this.completeSession();
+                    }
+                    this.saveState();
+                }
+
+                completeSession() {
+                    this.pause();
+                    this.showNotification();
+                    this.recordHistory();
+
+                    if (this.isWork) {
+                        this.workSessionsCompleted++;
+                        this.checkLongBreak();
+                    } else {
+                        this.resetToWork();
+                    }
+
+                    this.updateUI();
+                }
+
+                checkLongBreak() {
+                    if (this.workSessionsCompleted % this.longBreakInterval === 0) {
+                        this.isWork = false;
+                        this.totalSeconds = this.longBreakDuration * 60;
+                        this.remainingSeconds = this.totalSeconds;
+                        this.dom.timerStatus.textContent = '长休息时间!';
+                    } else {
+                        this.isWork = false;
+                        this.totalSeconds = this.dom.breakTime.value * 60;
+                        this.remainingSeconds = this.totalSeconds;
+                    }
+                }
+
+                resetToWork() {
+                    this.isWork = true;
+                    this.totalSeconds = this.dom.workTime.value * 60;
+                    this.remainingSeconds = this.totalSeconds;
+                    this.dom.timerStatus.textContent = '';
+                }
+
+                updateUI() {
+                    const mins = Math.floor(this.remainingSeconds / 60);
+                    const secs = this.remainingSeconds % 60;
+                    this.dom.timer.innerHTML = `
+                    <i class="fas ${this.isWork ? 'fa-laptop-code' : 'fa-coffee'} text-gray-500 mr-2"></i>
+                    ${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}
+                `;
+
+                    const progress = this.remainingSeconds / this.totalSeconds;
+                    this.dom.progressBar.style.width = `${progress * 100}%`;
+
+                    this.dom.completedCount.textContent = this.sessionCount;
+                    this.dom.totalMinutes.textContent = this.totalMinutes;
+
+                    document.title = `${this.isWork ? '工作' : '休息'} - ${mins}:${secs}`;
+                    this.dom.startBtn.innerHTML = this.isWork ? `<i class="fas fa-play mr-2"></i> 开始工作` : `<i class="fas fa-coffee mr-2"></i> 开始休息`;
+                }
+
+                handleInputChange(input) {
+                    input.value = Math.max(1, input.value);
+                    if (!this.isRunning) {
+                        this.totalSeconds = input.value * 60;
+                        this.remainingSeconds = this.totalSeconds;
+                        this.updateUI();
+                    }
+                    this.saveState();
+                }
+
+                recordHistory() {
+                    this.sessionCount++;
+                    this.totalMinutes += this.isWork ? parseInt(this.dom.workTime.value) : parseInt(this.dom.breakTime.value);
+
+                    this.history.push({
+                        type: this.isWork ? '工作' : '休息',
+                        duration: this.isWork ? parseInt(this.dom.workTime.value) : parseInt(this.dom.breakTime.value),
+                        timestamp: new Date().toISOString()
+                    });
+
+                    if (this.history.length > 100)
+                        this.history.shift();
+                    this.updateHistoryDisplay();
+                }
+
+                updateHistoryDisplay() {
+                    this.dom.historyList.innerHTML = this.history.slice(-10).reverse().map(item => `
+                        <div class="history-item flex justify-between text-sm text-gray-600 p-1">
+                            <span>${new Date(item.timestamp).toLocaleString()}</span>
+                            <span>${item.type} ${item.duration}分钟</span>
+                        </div>
+                    `).join('');
+                }
+
+                saveState() {
+                    localStorage.setItem('pomodoroState', JSON.stringify({
+                        workTime: this.dom.workTime.value,
+                        breakTime: this.dom.breakTime.value,
+                        longBreakInterval: this.longBreakInterval,
+                        longBreakDuration: this.longBreakDuration,
+                        remainingSeconds: this.remainingSeconds,
+                        isWork: this.isWork,
+                        isRunning: this.isRunning,
+                        sessionCount: this.sessionCount,
+                        totalMinutes: this.totalMinutes,
+                        workSessionsCompleted: this.workSessionsCompleted,
+                        history: this.history
+                    }));
+                }
+
+                loadState() {
+                    const saved = localStorage.getItem('pomodoroState');
+                    if (saved) {
+                        const data = JSON.parse(saved);
+                        this.dom.workTime.value = data.workTime || 25;
+                        this.dom.breakTime.value = data.breakTime || 5;
+                        this.longBreakInterval = data.longBreakInterval || 4;
+                        this.longBreakDuration = data.longBreakDuration || 15;
+                        this.remainingSeconds = data.remainingSeconds || this.dom.workTime.value * 60;
+                        this.isWork = data.isWork ?? true;
+                        this.isRunning = data.isRunning ?? false;
+                        this.sessionCount = data.sessionCount || 0;
+                        this.totalMinutes = data.totalMinutes || 0;
+                        this.workSessionsCompleted = data.workSessionsCompleted || 0;
+                        this.history = data.history || [];
+
+                        if (this.isRunning)
+                            this.start();
+                        this.updateUI();
+                        this.updateHistoryDisplay();
+                    }
+                }
+
+                requestNotificationPermission() {
+                    if (Notification.permission !== 'granted') {
+                        Notification.requestPermission();
+                    }
+                }
+
+                showNotification() {
+                    if (Notification.permission === 'granted') {
+                        new Notification(this.isWork ? '工作时间结束!' : '休息时间结束',{
+                            body: this.isWork ? '该休息一下了' : '准备好继续工作了吗？',
+                            icon: 'https://img.icons8.com/color/96/000000/tomato.png'
+                        });
+                    }
+                }
+
+                handleVisibilityChange() {
+                    if (document.visibilityState === 'hidden') {
+                        this.saveState();
+                    }
+                }
+
+                handleKeyboard(e) {
+                    if (e.code === 'Space') {
+                        e.preventDefault();
+                        this.isRunning ? this.pause() : this.start();
+                    }
+                    if (e.code === 'KeyR' && !e.ctrlKey) {
+                        this.reset();
+                    }
+                }
+            }
+
+            const timer = new PomodoroUltimate();
+        </script>
+    </body>
+</html>
